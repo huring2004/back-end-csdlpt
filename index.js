@@ -42,7 +42,6 @@ app.post(
     }
     try {
       const pool = req.currentPool;
-
       // Lấy danh sách cột và tạo parameter placeholders
       const columns = Object.keys(data);
       const placeholders = columns.map((col) => `@${col}`);
@@ -105,7 +104,7 @@ app.delete(
     }
   }
 );
-
+// đứng từ region_id hiển thị table của region_id_1
 app.get(
   "/:region_id/:region_id_1/get_tables/:table",
   setCurrentPool,
@@ -116,8 +115,11 @@ app.get(
     }
     try {
       const pool = req.currentPool;
-      const data = pool.request().query(`select *
-                                        from [link_${region_id_1}].[LogisticDB].[dbo].[${table}]`);
+      const data = pool
+        .request()
+        .query(
+          `select * from [link_${region_id_1}].[LogisticDB].[dbo].[${table}]`
+        );
       console.log("data", data);
       data.then((res1) => {
         return res.json(res1);
@@ -127,15 +129,196 @@ app.get(
     }
   }
 );
-//Câu truy vấn 1
 
-app.get("/:region_id/query1", setCurrentPool, async (req, res) => {
+//đúng ở region_id insert dữ liệu ở region_id_1 ở bảng table
+app.post(
+  "/:region_id/:region_id_1/insert_table/:table",
+  setCurrentPool,
+  async (req, res) => {
+    const { region_id_1, table } = req.params;
+    const data = req.body;
+
+    if (!/^[a-zA-Z0-9_]+$/.test(table)) {
+      return res.status(400).json({ error: "Invalid table name" });
+    }
+    try {
+      const pool = req.currentPool;
+      // Lấy danh sách cột và tạo parameter placeholders
+      const columns = Object.keys(data);
+      const placeholders = columns.map((col) => `@${col}`);
+
+      const query = `INSERT INTO [LINK_${region_id_1}].[LogisticDB].[dbo].[${table}] (${columns.join(
+        ", "
+      )}) VALUES (${placeholders.join(", ")})`;
+      const request = pool.request();
+
+      // Gán dữ liệu vào parameters
+      for (const col of columns) {
+        request.input(col, data[col]);
+      }
+      const result = await request.query(query);
+      return res.json({ message: "Inserted successfully", result });
+    } catch (err) {
+      console.error(err);
+      return res.status(500).json({ error: "Insert failed" });
+    }
+  }
+);
+
+//đúng ở region_id sửa dữ liệu ở region_id_1 ở bảng table
+app.post(
+  "/:region_id/:region_id_1/update_table/:table",
+  setCurrentPool,
+  async (req, res) => {
+    const { region_id_1, table } = req.params;
+    const data = req.body;
+
+    if (!/^[a-zA-Z0-9_]+$/.test(table)) {
+      return res.status(400).json({ error: "Invalid table name" });
+    }
+    const id_Column = `${idColumn[table]}`;
+
+    try {
+      const pool = req.currentPool;
+
+      // Lấy danh sách cột cần cập nhật, loại bỏ cột khóa chính
+      const columns = Object.keys(data).filter((col) => col !== id_Column);
+      if (columns.length === 0) {
+        return res
+          .status(400)
+          .json({ error: "Không có cột hợp lệ để cập nhật" });
+      }
+
+      // Tạo SET clause cho câu query
+      const setClause = columns.map((col) => `[${col}] = @${col}`).join(", ");
+
+      // Tạo câu query SQL
+      const query = `
+        UPDATE [LINK_${region_id_1}].[LogisticDB].[dbo].[${table}]
+        SET ${setClause}
+        WHERE [${id_Column}] = @${id_Column}
+      `;
+
+      const request = pool.request();
+
+      // Gán dữ liệu vào parameters
+      for (const col of Object.keys(data)) {
+        request.input(col, data[col]);
+      }
+
+      const result = await request.query(query);
+      return res.json({ message: "Updated successfully", result });
+    } catch (err) {
+      console.error(err);
+      return res.status(500).json({ error: "Update failed" });
+    }
+  }
+);
+
+//Câu truy vấn 0
+app.get("/:region_id/query0", setCurrentPool, async (req, res) => {
   try {
     const pool = req.currentPool;
     const data = pool
       .request()
       .query(
         `SELECT *  FROM [link_global].[LogisticDB].[dbo].[Orders] AS TMP WHERE TMP.[status] = 'Processing' AND TMP.[created_at] >= '2025-05-01'`
+      );
+
+    console.log("data", data);
+    data.then((res1) => {
+      return res.json(res1);
+    });
+  } catch (err) {
+    console.log(err);
+  }
+});
+
+//Câu truy vấn 1: Top 3 khách hàng có nhiều đơn hàng nhất mỗi vùng
+// câu truy vấn 2: tổng số đơn hàng của mỗi vùng
+
+app.get("/:region_id/query2", setCurrentPool, async (req, res) => {
+  try {
+    const pool = req.currentPool;
+    const data = pool
+      .request()
+      .query(
+        "SELECT t1.* FROM (SELECT 'EU' AS region, COUNT(*) AS num_orders FROM [LINK_EU].[LogisticDB].[dbo].[Orders] o ) AS t1 UNION ALL " +
+          "SELECT t2.* FROM (SELECT 'AS' AS region, COUNT(*) AS num_orders FROM [LINK_AS].[LogisticDB].[dbo].[Orders] o ) AS t2 UNION ALL " +
+          "SELECT t3.* FROM (SELECT 'AU' AS region, COUNT(*) AS num_orders FROM [LINK_AU].[LogisticDB].[dbo].[Orders] o ) AS t3 UNION ALL " +
+          "SELECT t4.* FROM (SELECT 'AF' AS region, COUNT(*) AS num_orders FROM [LINK_AF].[LogisticDB].[dbo].[Orders] o ) AS t4 "
+      );
+
+    console.log("data", data);
+    data.then((res1) => {
+      return res.json(res1);
+    });
+  } catch (err) {
+    console.log(err);
+  }
+});
+//câu truy vấn 3: tổng giá trị hóa đơn (bao gồm cả thuế vat) của mỗi vùng
+app.get("/:region_id/query3", setCurrentPool, async (req, res) => {
+  try {
+    const pool = req.currentPool;
+    const data = pool
+      .request()
+      .query(
+        "SELECT t1.* FROM (SELECT 'EU' AS region, sum(o.amount+ i.vat) AS num_orders FROM [LINK_EU].[LogisticDB].[dbo].[Invoice] i JOIN [LINK_EU].[LogisticDB].[dbo].[Orders] o ON i.order_id = o.order_id) AS t1 UNION ALL " +
+          "SELECT t2.* FROM (SELECT 'AS' AS region, sum(o.amount+ i.vat) AS num_orders FROM [LINK_AS].[LogisticDB].[dbo].[Invoice] i JOIN [LINK_AS].[LogisticDB].[dbo].[Orders] o ON i.order_id = o.order_id) AS t2 UNION ALL " +
+          "SELECT t3.* FROM (SELECT 'AU' AS region, sum(o.amount+ i.vat) AS num_orders FROM [LINK_AU].[LogisticDB].[dbo].[Invoice] i JOIN [LINK_AU].[LogisticDB].[dbo].[Orders] o ON i.order_id = o.order_id) AS t3 UNION ALL " +
+          "SELECT t4.*FROM (SELECT 'AF' AS region, sum(o.amount+ i.vat) AS num_orders FROM [LINK_AF].[LogisticDB].[dbo].[Invoice] i JOIN [LINK_AF].[LogisticDB].[dbo].[Orders] o ON i.order_id = o.order_id) AS t4"
+      );
+
+    console.log("data", data);
+    data.then((res1) => {
+      return res.json(res1);
+    });
+  } catch (err) {
+    console.log(err);
+  }
+});
+//câu truy vấn 4: Trung bình thời gian xử lý hải quan mỗi vùng
+
+app.get("/:region_id/query4", setCurrentPool, async (req, res) => {
+  try {
+    const pool = req.currentPool;
+    const data = pool
+      .request()
+      .query(
+        "SELECT t1.* FROM (SELECT 'EU' AS region, avg(c.processing_time) AS avg_processing_time FROM [LINK_EU].[LogisticDB].[dbo].[Customs] c ) AS t1" +
+          "UNION ALL" +
+          +"SELECT t2.* FROM (SELECT 'AS' AS region, avg(c.processing_time) AS avg_processing_time FROM [LINK_AS].[LogisticDB].[dbo].[Customs] c ) AS t2" +
+          "UNION ALL" +
+          +"SELECT t3.* FROM (SELECT 'AU' AS region, avg(c.processing_time) AS avg_processing_time FROM [LINK_AU].[LogisticDB].[dbo].[Customs] c ) AS t3" +
+          "UNION ALL" +
+          +"SELECT t4.* FROM (SELECT 'AF' AS region, avg(c.processing_time) AS avg_processing_time FROM [LINK_AF].[LogisticDB].[dbo].[Customs] c ) AS t4"
+      );
+
+    console.log("data", data);
+    data.then((res1) => {
+      return res.json(res1);
+    });
+  } catch (err) {
+    console.log(err);
+  }
+});
+
+//câu truy vấn 5: Trung bình số lượng đơn hàng mỗi khách hàng theo vùng
+
+app.get("/:region_id/query5", setCurrentPool, async (req, res) => {
+  try {
+    const pool = req.currentPool;
+    const data = pool
+      .request()
+      .query(
+        "SELECT t1.* FROM (SELECT 'EU' AS region, avg(c.processing_time) AS avg_processing_time FROM [LINK_EU].[LogisticDB].[dbo].[Customs] c ) AS t1" +
+          "UNION ALL" +
+          +"SELECT t2.* FROM (SELECT 'AS' AS region, avg(c.processing_time) AS avg_processing_time FROM [LINK_AS].[LogisticDB].[dbo].[Customs] c ) AS t2" +
+          "UNION ALL" +
+          +"SELECT t3.* FROM (SELECT 'AU' AS region, avg(c.processing_time) AS avg_processing_time FROM [LINK_AU].[LogisticDB].[dbo].[Customs] c ) AS t3" +
+          "UNION ALL" +
+          +"SELECT t4.* FROM (SELECT 'AF' AS region, avg(c.processing_time) AS avg_processing_time FROM [LINK_AF].[LogisticDB].[dbo].[Customs] c ) AS t4"
       );
 
     console.log("data", data);
